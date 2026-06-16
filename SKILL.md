@@ -5,14 +5,14 @@ description: Archive a given X or Twitter post link into an Obsidian-ready Markd
 
 # X Markdown Archiver
 
-Use the local `x-md` CLI to archive a given X or Twitter post into the Obsidian inbox.
+Use the bundled `x-md` CLI in this skill repo to archive a given X or Twitter post into the Obsidian inbox.
 
 ## Workflow
 
 1. Use this repo as the working directory:
 
    ```sh
-   /Users/guodawei/Documents/GitHub/x-md
+   /Users/guodawei/Documents/GitHub/x-md-skill
    ```
 
 2. Check whether the project virtualenv exists:
@@ -25,16 +25,18 @@ Use the local `x-md` CLI to archive a given X or Twitter post into the Obsidian 
 
    ```sh
    python3 -m venv .venv
-   .venv/bin/python -m pip install -r requirements.txt
+   .venv/bin/python -m pip install -r scripts/requirements.txt
    ```
 
 3. Archive the X link into the Obsidian inbox:
 
    ```sh
-   .venv/bin/python -m x_md archive "<X_POST_URL>" --out "/Users/guodawei/Library/Mobile Documents/com~apple~CloudDocs/Documents/Obsidian Vault/inbox"
+   .venv/bin/python scripts/archive_x_post.py archive "<X_POST_URL>" --out "/Users/guodawei/Library/Mobile Documents/com~apple~CloudDocs/Documents/Obsidian Vault/inbox"
    ```
 
-4. Rename the generated archive folder into an Obsidian-friendly folder-note name:
+4. If the user gives special instructions in their prompt, follow those instructions over the default naming or post-processing rules below.
+
+5. Rename the generated archive folder into an Obsidian-friendly folder-note name:
 
    ```text
    YYYYMMDD - <DisplayTitle>
@@ -46,7 +48,7 @@ Use the local `x-md` CLI to archive a given X or Twitter post into the Obsidian 
    - Start at `post 1`; if that folder already exists, increment the number until the name is unique.
    - Keep the Markdown file itself named `index.md` so local assets and folder-note behavior remain stable.
 
-5. Update `index.md` metadata title to match the display title, but keep the first header as `Index`:
+6. Update `index.md` metadata title to match the display title, but keep the first header as `Index`:
 
    ```markdown
    ---
@@ -61,9 +63,9 @@ Use the local `x-md` CLI to archive a given X or Twitter post into the Obsidian 
    - Keep the first `#` header as `Index`.
    - Do not rewrite post text, quote text, or reply text beyond the title and asset-link cleanup below.
 
-6. If image files are stored under `assets/`, ensure Markdown image links point to `assets/<filename>` rather than bare filenames.
+7. If image files are stored under `assets/`, ensure Markdown image links point to `assets/<filename>` rather than bare filenames.
 
-7. Report the final archive folder path and its `index.md` path.
+8. Report the final archive folder path and its `index.md` path.
 
 ## Output
 
