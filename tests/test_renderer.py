@@ -2,8 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from x_md.models import Media, Post
-from x_md.renderer import build_markdown, render_archive
+from scripts.archive_x_post import Media, Post, build_markdown, render_archive
 
 
 class RendererTest(unittest.TestCase):

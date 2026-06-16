@@ -1,6 +1,6 @@
 import unittest
 
-from x_md.extractor import parse_gallery_dl_json
+from scripts.archive_x_post import parse_gallery_dl_json
 
 
 class ExtractorTest(unittest.TestCase):

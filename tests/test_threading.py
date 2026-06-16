@@ -1,7 +1,6 @@
 import unittest
 
-from x_md.models import Post
-from x_md.threading import kept_reply_paths, quote_chain
+from scripts.archive_x_post import Post, kept_reply_paths, quote_chain
 
 
 class ThreadingTest(unittest.TestCase):

@@ -1,6 +1,6 @@
 import unittest
 
-from x_md.url import parse_post_url
+from scripts.archive_x_post import parse_post_url
 
 
 class ParsePostUrlTest(unittest.TestCase):

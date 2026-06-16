@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from x_md.normalize import normalize_posts
+from scripts.archive_x_post import normalize_posts
 
 
 class NormalizeTest(unittest.TestCase):
