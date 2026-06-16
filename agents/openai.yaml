@@ -1,0 +1,4 @@
+interface:
+  display_name: "X Markdown"
+  short_description: "Archive X posts into Markdown"
+  default_prompt: "Use $x-md to archive this X post into an Obsidian-ready Markdown folder."
