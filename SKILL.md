@@ -1,6 +1,6 @@
 ---
 name: x-md
-description: Archive a given X or Twitter post link into an Obsidian-ready Markdown folder using the local x-md CLI. Use when the user asks to scrape, archive, save, capture, or export an X link, X post, Twitter post, or Twitter thread to Markdown for local notes.
+description: Archive a given X or Twitter post link into an Obsidian-ready Markdown note using the local x-md CLI. Use when the user asks to scrape, archive, save, capture, or export an X link, X post, Twitter post, or Twitter thread to Markdown for local notes.
 ---
 
 # X Markdown Archiver
@@ -36,51 +36,53 @@ Use the bundled `x-md` CLI in this skill repo to archive a given X or Twitter po
 
 4. If the user gives special instructions in their prompt, follow those instructions over the default naming or post-processing rules below.
 
-5. Rename the generated archive folder into an Obsidian-friendly folder-note name:
+5. Rename the generated `<slug>.md` file (it lands directly in the output directory, not in a per-post subfolder) into an Obsidian-friendly note name:
 
    ```text
-   YYYYMMDD - <DisplayTitle>
+   YYYYMMDD - <DisplayTitle>.md
    ```
 
-   - Use the source post date from `created_at` for `YYYYMMDD`.
-   - Use a short content-facing display title, not `Index`.
+   - Use the source post date from `published` for `YYYYMMDD`.
+   - Use a short content-facing display title.
    - Default display title: `<AuthorDisplayName> post <N>`, using the author's display name from frontmatter before the `@handle`.
-   - Start at `post 1`; if that folder already exists, increment the number until the name is unique.
-   - Keep the Markdown file itself named `index.md` so local assets and folder-note behavior remain stable.
+   - Start at `post 1`; if a note with that name already exists in the output directory, increment the number until the name is unique.
 
-6. Update `index.md` metadata title to match the display title, but keep the first header as `Index`:
+6. Add a `title` field to the note's frontmatter, as the first key, matching the display title:
 
    ```markdown
    ---
    title: "Serenity post 1"
-   ...
+   source: "https://x.com/serenity/status/123"
+   author:
+     - "@serenity"
+   published: 2026-06-30
+   created: 2026-07-01
    ---
-
-   # Index
    ```
 
-   - Use the content-facing display title, not `Index`, for the `title` field.
-   - Keep the first `#` header as `Index`.
-   - Do not rewrite post text, quote text, or reply text beyond the title and asset-link cleanup below.
+   - Do not rewrite post text, quote text, reply text, or the first `#` header beyond the title and asset-link cleanup below.
 
-7. If image files are stored under `assets/`, ensure Markdown image links point to `assets/<filename>` rather than bare filenames.
+7. Confirm image links in the note point to `raw/assets/<filename>` (the script writes them this way already; only fix them if something is off).
 
-8. Report the final archive folder path and its `index.md` path.
+8. Report the final note path and the shared `raw/assets/` directory it draws images from.
 
 ## Output
 
-The archive creates one folder containing:
+The archive writes one flat Markdown file directly into the output directory (not wrapped in a per-post subfolder), plus any images into a single shared `raw/assets/` directory next to it:
 
-- `index.md`
-- `assets/` with local image files
+- `<slug>.md`
+- `raw/assets/` with local image files from every archived post, named `<post_id>-<n>.<ext>` so they never collide across posts
+
+Keeping each post as its own uniquely-named file (instead of a same-named `index.md` inside a folder) is what keeps Obsidian's graph view legible — every node gets a distinct label instead of all showing up as "Index".
 
 The archive includes:
 
 - the input post
 - the quoted-post chain
-- reply paths that end at comments by the input author
+- the input author's own direct-reply continuation chain (a self-thread used to post long text), merged into the Post section as one continuous piece rather than listed as replies
+- any remaining reply paths that end at comments by the input author, trimmed to start after the continuation chain
 
-In the rendered Replies section, each reply path should start at the first actual reply beneath the input post rather than repeating the input post again.
+In the rendered Replies section, each reply path should start at the first actual reply beneath the input post (or beneath the end of its self-thread continuation) rather than repeating earlier posts again.
 
 ## Operational Notes
 
@@ -88,4 +90,4 @@ In the rendered Replies section, each reply path should start at the first actua
 - The scraper uses Chrome cookies through `gallery-dl`.
 - If extraction fails with an X, cookie, or auth error, surface the exact error and suggest logging into X again in Chrome.
 - If extraction fails with DNS or network errors, mention the exact network symptom before retrying.
-- Only post-process the generated Markdown for the `title` frontmatter field, first `#` header, folder renaming, and local asset links unless the user explicitly asks for another formatting fix.
+- Only post-process the generated Markdown for the `title` frontmatter field, file renaming, and local asset links unless the user explicitly asks for another formatting fix.

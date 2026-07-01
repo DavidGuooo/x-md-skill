@@ -115,12 +115,12 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         posts = extract_archive_posts(args.url)
-        archive_dir = render_archive(args.url, posts, Path(args.out))
+        note_path = render_archive(args.url, posts, Path(args.out))
     except (ExtractionError, ValueError) as error:
         print(f"x-md: {error}")
         return 2
 
-    print(f"Wrote archive: {archive_dir}")
+    print(f"Wrote archive: {note_path}")
     return 0
 
 
@@ -443,48 +443,54 @@ def render_archive(url: str, posts: dict[str, Post], output_root: Path) -> Path:
     if not input_post:
         raise ValueError(f"Could not find input post {parsed.post_id} in extracted data")
 
-    archive_dir = output_root / archive_slug(input_post)
-    assets_dir = archive_dir / "assets"
-    reset_assets_dir(assets_dir)
+    assets_dir = output_root / "raw" / "assets"
+    ensure_assets_dir(assets_dir)
 
     quoted_posts = quote_chain(posts, input_post.id)
-    reply_paths = kept_reply_paths(posts, input_post.id, input_post.author_key)
+    continuation_posts = self_thread_continuation(posts, input_post.id, input_post.author_key)
+    main_chain_ids = {input_post.id, *(post.id for post in continuation_posts)}
+    reply_paths = kept_reply_paths(posts, input_post.id, input_post.author_key, main_chain_ids)
 
     selected_posts = {input_post.id: input_post}
     for post in quoted_posts:
+        selected_posts[post.id] = post
+    for post in continuation_posts:
         selected_posts[post.id] = post
     for path in reply_paths:
         for post in path:
             selected_posts[post.id] = post
 
     materialize_assets(selected_posts, assets_dir)
-    markdown = build_markdown(parsed.canonical_url, input_post, quoted_posts, reply_paths)
-    index_path = archive_dir / "index.md"
-    index_path.write_text(markdown, encoding="utf-8")
-    return archive_dir
+    markdown = build_markdown(parsed.canonical_url, input_post, quoted_posts, continuation_posts, reply_paths)
+    note_path = output_root / f"{archive_slug(input_post)}.md"
+    note_path.write_text(markdown, encoding="utf-8")
+    return note_path
 
 
 def build_markdown(
     source_url: str,
     input_post: Post,
     quoted_posts: list[Post],
+    continuation_posts: list[Post],
     reply_paths: list[list[Post]],
 ) -> str:
     lines = [
         "---",
-        f'source_url: "{source_url}"',
-        f'post_id: "{input_post.id}"',
-        f'author: "{escape_yaml(input_post.display_author)}"',
-        f'created_at: "{escape_yaml(input_post.created_at or "")}"',
-        f'archived_at: "{datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")}"',
+        f'source: "{source_url}"',
+        "author:",
+        f'  - "{escape_yaml(frontmatter_author(input_post))}"',
+        f"published: {iso_date(input_post.created_at) or ''}",
+        f"created: {datetime.now(UTC).strftime('%Y-%m-%d')}",
         "---",
         "",
-        "# X Archieve",
+        "# X Archive",
         "",
         "## Post",
         "",
         render_post(input_post),
     ]
+    for post in continuation_posts:
+        lines.extend(["", render_post(post)])
 
     if quoted_posts:
         lines.extend(["", "## Quoted Posts", ""])
@@ -495,7 +501,7 @@ def build_markdown(
         lines.extend(["", "## Replies", ""])
         for index, path in enumerate(reply_paths, start=1):
             lines.extend([f"### Reply Path {index}", ""])
-            for post in (path[1:] if path and path[0].id == input_post.id else path):
+            for post in path:
                 lines.extend([render_post(post), ""])
 
     return "\n".join(lines).rstrip() + "\n"
@@ -515,18 +521,75 @@ def quote_chain(posts: dict[str, Post], root_id: str) -> list[Post]:
     return chain
 
 
-def kept_reply_paths(posts: dict[str, Post], root_id: str, input_author_key: str) -> list[list[Post]]:
+def self_thread_continuation(posts: dict[str, Post], root_id: str, author_key: str) -> list[Post]:
+    """Walk unambiguous same-author direct-reply chains off the root.
+
+    On X, posting long text as a thread means each reply directly replies to
+    the author's own previous post. Those are a continuation of the original
+    post, not a separate branch, so they get merged into it instead of being
+    listed as their own "Reply Path".
+    """
+    children_by_parent: dict[str, list[Post]] = {}
+    for post in posts.values():
+        if post.parent_id:
+            children_by_parent.setdefault(post.parent_id, []).append(post)
+
+    chain: list[Post] = []
+    seen = {root_id}
+    current_id = root_id
+    while True:
+        candidates = [
+            child
+            for child in children_by_parent.get(current_id, [])
+            if child.author_key == author_key and child.id not in seen
+        ]
+        if len(candidates) != 1:
+            break
+        next_post = candidates[0]
+        chain.append(next_post)
+        seen.add(next_post.id)
+        current_id = next_post.id
+    return chain
+
+
+def kept_reply_paths(
+    posts: dict[str, Post],
+    root_id: str,
+    input_author_key: str,
+    main_chain_ids: set[str],
+) -> list[list[Post]]:
     paths: list[list[Post]] = []
     seen_paths: set[tuple[str, ...]] = set()
     for post in sorted(posts.values(), key=lambda item: (item.created_at or "", item.id)):
-        if post.id == root_id or post.author_key != input_author_key:
+        if post.id in main_chain_ids or post.author_key != input_author_key:
             continue
         path = path_from_root(posts, root_id, post.id)
-        key = tuple(item.id for item in path)
-        if path and key not in seen_paths:
+        trimmed = trim_main_chain(path, main_chain_ids)
+        key = tuple(item.id for item in trimmed)
+        if trimmed and key not in seen_paths:
             seen_paths.add(key)
-            paths.append(path)
-    return paths
+            paths.append(trimmed)
+    return drop_prefix_paths(paths)
+
+
+def trim_main_chain(path: list[Post], main_chain_ids: set[str]) -> list[Post]:
+    index = 0
+    while index < len(path) and path[index].id in main_chain_ids:
+        index += 1
+    return path[index:]
+
+
+def drop_prefix_paths(paths: list[list[Post]]) -> list[list[Post]]:
+    id_sequences = [tuple(post.id for post in path) for path in paths]
+    kept: list[list[Post]] = []
+    for path, seq in zip(paths, id_sequences):
+        if any(
+            seq != other and len(seq) < len(other) and other[: len(seq)] == seq
+            for other in id_sequences
+        ):
+            continue
+        kept.append(path)
+    return kept
 
 
 def path_from_root(posts: dict[str, Post], root_id: str, target_id: str) -> list[Post]:
@@ -556,13 +619,7 @@ def render_post(post: Post) -> str:
     return "\n".join(lines)
 
 
-def reset_assets_dir(assets_dir: Path) -> None:
-    if assets_dir.exists():
-        for path in assets_dir.iterdir():
-            if path.is_dir():
-                shutil.rmtree(path)
-            else:
-                path.unlink()
+def ensure_assets_dir(assets_dir: Path) -> None:
     assets_dir.mkdir(parents=True, exist_ok=True)
 
 
@@ -576,7 +633,7 @@ def materialize_assets(posts: dict[str, Post], assets_dir: Path) -> None:
             target = assets_dir / f"{post.id}-{image_index}{extension}"
             image_index += 1
             shutil.copy2(media.source_path, target)
-            media.relative_path = f"assets/{target.name}"
+            media.relative_path = f"raw/assets/{target.name}"
 
 
 def archive_slug(post: Post) -> str:
@@ -586,10 +643,23 @@ def archive_slug(post: Post) -> str:
 
 
 def compact_date(value: str | None) -> str | None:
+    date = iso_date(value)
+    return date.replace("-", "") if date else None
+
+
+def iso_date(value: str | None) -> str | None:
     if not value:
         return None
     match = re.search(r"(\d{4})[-/](\d{2})[-/](\d{2})", value)
-    return "".join(match.groups()) if match else None
+    return "-".join(match.groups()) if match else None
+
+
+def frontmatter_author(post: Post) -> str:
+    if post.author_handle:
+        return f"@{post.author_handle}"
+    if post.author_name:
+        return post.author_name
+    return "unknown"
 
 
 def sanitize_slug(value: str) -> str:
